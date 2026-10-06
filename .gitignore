@@ -1,0 +1,12 @@
+# Large input/derived data is kept locally, not in git
+data/
+outputs/
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# GIS side files
+*.aux.xml
+*.qgz~
