@@ -30,19 +30,22 @@ QUADRANTS = {  # row/col slices of the 10000 x 10000 grid (row 0 = north)
 }
 CALIBRATION, HOLDOUT = ["sw", "ne"], ["se", "nw"]
 
-# Refinement grid. The coarse grid (max_roughness 1.25-2.0, min_height 2.5/3.0,
-# open_radius 1-3, grow_px 1-3, min_smooth_frac 0-0.6) peaked at
-# max_roughness=1.25, min_height=2.5, open_radius=1, grow_px=3, min_smooth_frac=0.
+# History: a coarse grid (max_roughness 1.25-2.0, min_height 2.5/3.0, open_radius
+# 1-3, grow_px 1-3, min_smooth_frac 0-0.6) and a refinement (max_roughness
+# 0.75-1.25, open_radius 0/1, grow_px 3-5) chose max_roughness=1.0,
+# open_radius=0, grow_px=4. This grid adds the Sentinel-2 NDVI object filter;
+# with NDVI removing trees, a looser roughness threshold may recover roofs.
+# Result: NDVI on all footprints cost urban recall (houses joined to garden trees),
+# so the filter was limited to footprints < ndvi_max_area_m2; a follow-up comparison
+# chose max_roughness=1.25, grow_px=4, max_object_ndvi=0.7, ndvi_max_area_m2=400.
 GRID = dict(
-    max_roughness=[0.75, 1.0, 1.25],
-    min_height=[2.5],
-    open_radius=[0, 1],
-    grow_px=[3, 4, 5],
-    min_smooth_frac=[0.0],
+    max_roughness=[1.0, 1.25, 1.5, 1.75],
+    grow_px=[3, 4],
+    max_object_ndvi=[0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 1.0],
 )
 
 CACHE = config.PROCESSED / "tuning_cache"
-ARRAYS = ("ndsm", "rough", "gt", "ign")
+ARRAYS = ("ndsm", "rough", "gt", "ign", "ndvi")
 _DATA = {}
 
 
@@ -57,9 +60,12 @@ def load_data():
                                  dtype="uint8").astype(bool)
     gt = raster(scored.geometry)
     ign = raster(ignored.geometry) & ~gt
+    ndvi = ext.load_ndvi(ndsm.shape)
+    if ndvi is None:
+        ndvi = np.zeros_like(ndsm)
     CACHE.mkdir(parents=True, exist_ok=True)
     for q, r in QUADRANTS.items():
-        for name, a in zip(ARRAYS, (ndsm, rough, gt, ign)):
+        for name, a in zip(ARRAYS, (ndsm, rough, gt, ign, ndvi)):
             np.save(CACHE / f"{q}_{name}.npy", a[r])
 
 
@@ -78,8 +84,8 @@ def evaluate(params, quads=CALIBRATION):
     p = dict(ext.PARAMS, **params)
     out = dict(params)
     for q in quads:
-        ndsm, rough, gt, ign = _DATA[q]
-        f1, pr, rc = score(ext.extract_mask(ndsm, None, p, rough=rough), gt, ign)
+        ndsm, rough, gt, ign, ndvi = _DATA[q]
+        f1, pr, rc = score(ext.extract_mask(ndsm, None, p, rough=rough, ndvi=ndvi), gt, ign)
         out.update({f"f1_{q}": f1, f"p_{q}": pr, f"r_{q}": rc})
     out["objective"] = np.mean([out[f"f1_{q}"] for q in CALIBRATION])
     return out

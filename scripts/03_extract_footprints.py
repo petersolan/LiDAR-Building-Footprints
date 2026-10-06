@@ -11,7 +11,9 @@
 5. Tidy:   closing, small-hole filling and a minimum-area filter.
 6. Objects: each connected footprint must reach a minimum height (matching the
            ground truth's height filter) and be mostly smooth; blobs dominated
-           by rough pixels are tree crowns that slipped through.
+           by rough pixels are tree crowns that slipped through. If the
+           Sentinel-2 NDVI composite exists, footprints that are green on
+           average (mean NDVI above max_object_ndvi) are dropped as vegetation.
 7. Vectorise and simplify, writing outputs/footprints/lidar_baseline.gpkg.
 """
 
@@ -20,6 +22,7 @@ import argparse
 import geopandas as gpd
 import numpy as np
 import rasterio
+from rasterio.enums import Resampling
 from rasterio.features import shapes
 from scipy import ndimage as ndi
 from shapely.geometry import shape
@@ -29,7 +32,7 @@ import config
 
 PARAMS = dict(
     min_height=2.5,     # m above ground
-    max_roughness=1.0,  # mean |Laplacian| of DSM over 5x5 (tuned on SW + NE)
+    max_roughness=1.25,  # mean |Laplacian| of DSM over 5x5 (tuned on SW + NE)
     open_radius=0,      # px, disk radius for opening the seeds (0 = off)
     min_seed_px=10,     # px, smallest seed blob kept
     grow_px=4,          # px, geodesic growth of seeds into the tall mask
@@ -38,10 +41,13 @@ PARAMS = dict(
     min_object_height=3.5,     # m, max nDSM within a footprint
     min_smooth_frac=0.0,       # share of a footprint's pixels below max_roughness
     max_object_roughness=99.0,  # mean roughness within a footprint
+    max_object_ndvi=0.7,       # mean Sentinel-2 NDVI within a footprint (1.0 = off)
+    ndvi_max_area_m2=400.0,    # NDVI filter only applies to footprints smaller than this
     simplify_m=0.5,     # Douglas-Peucker tolerance for the polygons
 )
 
 OUT_DIR = config.OUTPUTS / "footprints"
+NDVI_PATH = config.PROCESSED / "ndvi_s2_2022.tif"  # from 07_sentinel2_ndvi.py
 MASK_PATH = OUT_DIR / "lidar_baseline_mask.tif"
 VECTOR_PATH = OUT_DIR / "lidar_baseline.gpkg"
 
@@ -50,7 +56,16 @@ def roughness(dsm):
     return ndi.uniform_filter(np.abs(ndi.laplace(dsm.astype("float32"))), 5)
 
 
-def extract_mask(ndsm, dsm, p=PARAMS, rough=None):
+def load_ndvi(shape):
+    """Sentinel-2 NDVI resampled onto the 1 m grid, or None if not built yet."""
+    if not NDVI_PATH.exists():
+        return None
+    with rasterio.open(NDVI_PATH) as src:
+        ndvi = src.read(1, out_shape=shape, resampling=Resampling.bilinear)
+    return np.where(ndvi < -1, 0.0, ndvi).astype("float32")  # nodata -> neutral
+
+
+def extract_mask(ndsm, dsm, p=PARAMS, rough=None, ndvi=None):
     """Boolean building mask. `rough` can be passed in to reuse it while tuning."""
     tall = ndsm > p["min_height"]
     if rough is None:
@@ -69,11 +84,11 @@ def extract_mask(ndsm, dsm, p=PARAMS, rough=None):
     mask = morphology.remove_small_holes(mask, max_size=p["max_hole_px"])
     min_px = int(p["min_area_m2"] / config.RESOLUTION ** 2)
     mask = morphology.remove_small_objects(mask, max_size=min_px - 1)
-    return filter_objects(mask, ndsm, rough, p)
+    return filter_objects(mask, ndsm, rough, p, ndvi)
 
 
-def filter_objects(mask, ndsm, rough, p=PARAMS):
-    """Drop connected footprints that are too low or mostly rough (vegetation)."""
+def filter_objects(mask, ndsm, rough, p=PARAMS, ndvi=None):
+    """Drop connected footprints that are too low, mostly rough or green (vegetation)."""
     labels, n = ndi.label(mask)
     if n == 0:
         return mask
@@ -84,6 +99,12 @@ def filter_objects(mask, ndsm, rough, p=PARAMS):
     keep = ((max_h >= p["min_object_height"])
             & (smooth_frac >= p["min_smooth_frac"])
             & (mean_rough <= p["max_object_roughness"]))
+    if ndvi is not None and p["max_object_ndvi"] < 1.0:
+        # 10 m NDVI mixes roofs with neighbouring gardens, so large footprints
+        # (houses joined to trees) are exempt; small green blobs are trees
+        area = np.bincount(labels.ravel(), minlength=n + 1)[1:] * config.RESOLUTION ** 2
+        green = ndi.mean(ndvi, labels, idx) > p["max_object_ndvi"]
+        keep &= ~(green & (area < p["ndvi_max_area_m2"]))
     return np.concatenate([[False], keep])[labels]
 
 
@@ -110,7 +131,10 @@ def main():
     with rasterio.open(config.DSM_PATH) as src:
         dsm = src.read(1)
 
-    mask = extract_mask(ndsm, dsm, p)
+    ndvi = load_ndvi(ndsm.shape)
+    if ndvi is None and p["max_object_ndvi"] < 1.0:
+        print("WARNING: NDVI filter set but ndvi_s2_2022.tif not found; skipping it")
+    mask = extract_mask(ndsm, dsm, p, ndvi=ndvi)
     print(f"Building pixels: {mask.sum():,} ({100 * mask.mean():.2f}% of AOI)")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

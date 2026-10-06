@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 import shapely
+from rasterio.enums import Resampling
 from rasterio.features import rasterize
 from scipy import ndimage as ndi
 from scipy.stats import mannwhitneyu
@@ -29,7 +30,8 @@ from groundtruth import load_ground_truth
 
 OUT_DIR = config.OUTPUTS / "diagnostics"
 LIDAR_PATH = config.OUTPUTS / "footprints" / "lidar_baseline.gpkg"
-SMOOTH_THRESHOLD = 1.0  # roughness below this counts as smooth (matches extraction)
+NDVI_PATH = config.PROCESSED / "ndvi_s2_2022.tif"  # optional, from 07_sentinel2_ndvi.py
+SMOOTH_THRESHOLD = 1.25  # roughness below this counts as smooth (matches extraction)
 
 
 def overlap_share(geoms, others):
@@ -81,6 +83,15 @@ def main():
     lid["rough_mean"] = zonal(rough, labels, n, ndi.mean)
     lid["rough_median"] = zonal(rough, labels, n, ndi.median)
     lid["smooth_frac"] = zonal((rough < SMOOTH_THRESHOLD).astype("float32"), labels, n, ndi.mean)
+    feats = []
+    if NDVI_PATH.exists():
+        # 10 m NDVI resampled bilinearly onto the 1 m grid
+        with rasterio.open(NDVI_PATH) as src:
+            ndvi = src.read(1, out_shape=ndsm.shape, resampling=Resampling.bilinear)
+        ndvi = np.where(ndvi < -1, 0.0, ndvi)  # nodata -> neutral
+        lid["ndvi_mean"] = zonal(ndvi, labels, n, ndi.mean)
+        lid["ndvi_max"] = zonal(ndvi, labels, n, ndi.maximum)
+        feats = ["ndvi_mean", "ndvi_max"]
 
     area = shapely.area(geoms)
     lid["area_m2"] = area.round(1)
@@ -88,7 +99,7 @@ def main():
     lid["rectangularity"] = area / shapely.area(shapely.oriented_envelope(geoms))
     c = shapely.centroid(geoms)
     lid["half"] = np.where(shapely.get_y(c) >= 95000, "north", "south")
-    feats = ["area_m2", "h_max", "h_mean", "h_std", "rough_mean", "rough_median",
+    feats += ["area_m2", "h_max", "h_mean", "h_std", "rough_mean", "rough_median",
              "smooth_frac", "compactness", "rectangularity"]
     lid[feats] = lid[feats].astype("float64").round(3)
     lid.to_file(OUT_DIR / "lidar_objects.gpkg", driver="GPKG", layer="lidar_objects")

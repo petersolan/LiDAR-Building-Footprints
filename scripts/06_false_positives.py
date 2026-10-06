@@ -32,8 +32,15 @@ def main():
     scored, ignored = load_ground_truth(aoi)
     os_parts = ev.blocks(np.concatenate([scored.geometry.values, ignored.geometry.values]))
     os_u = shapely.union_all(os_parts)
+    scored_u = shapely.union_all(ev.polygons(scored.geometry.values))
     near_u = shapely.buffer(os_u, EDGE_M)
-    print(f"OS buildings (all): {os_u.area / 1e6:.3f} km2", flush=True)
+    regions = [("all", aoi)] + list(ev.QUADRANTS.items())
+
+    # Ground truth building area per quadrant, before and after filtering
+    gt_rows = [dict(quadrant=q,
+                    os_all_m2=shapely.intersection(os_u, r).area,
+                    os_scored_m2=shapely.intersection(scored_u, r).area) for q, r in regions]
+    print(f"OS buildings (all): {os_u.area:,.0f} m2", flush=True)
 
     rows, false_feats = [], []
     for name, path in ev.DATASETS.items():
@@ -50,37 +57,45 @@ def main():
             {"dataset": name, "area_m2": shapely.area(false_geoms).round(1)},
             geometry=false_geoms, crs=config.CRS))
 
-        for q, qbox in [("all", aoi)] + list(ev.QUADRANTS.items()):
-            pa = shapely.intersection(pr_u, qbox).area
-            out = shapely.intersection(outside, qbox).area
-            iso = shapely.intersection(isolated, qbox).area
-            in_q = shapely.intersects(false_geoms, qbox) if q != "all" else np.ones(len(false_geoms), bool)
+        for q, region in regions:
+            pa = shapely.intersection(pr_u, region).area
+            out = shapely.intersection(outside, region).area
+            iso = shapely.intersection(isolated, region).area
+            in_q = shapely.intersects(false_geoms, region)
             rows.append(dict(
                 dataset=name, quadrant=q,
-                pred_km2=pa / 1e6,
-                outside_km2=out / 1e6, outside_pct=100 * out / pa,
-                edge_km2=(out - iso) / 1e6, isolated_km2=iso / 1e6,
-                isolated_pct=100 * iso / pa,
+                pred_m2=pa,
+                outside_m2=out, outside_pct=100 * out / pa,
+                edge_m2=out - iso, isolated_m2=iso, isolated_pct=100 * iso / pa,
                 false_features=int(in_q.sum()),
-                false_features_pct=100 * in_q.sum() / max(shapely.intersects(geoms, qbox).sum(), 1),
+                false_features_m2=shapely.area(shapely.intersection(false_geoms[in_q], region)).sum(),
             ))
         print(f"{name} done", flush=True)
 
-    df = pd.DataFrame(rows)
+    gt = pd.DataFrame(gt_rows)
+    df = pd.DataFrame(rows).merge(gt, on="quadrant")
+    m2 = ["pred_m2", "outside_m2", "edge_m2", "isolated_m2", "false_features_m2",
+          "os_all_m2", "os_scored_m2"]
+    df[m2] = df[m2].round(0).astype("int64")
     ev.EVAL_DIR.mkdir(parents=True, exist_ok=True)
-    df.round(4).to_csv(ev.EVAL_DIR / "false_positives.csv", index=False)
+    df.round(2).to_csv(ev.EVAL_DIR / "false_positives.csv", index=False)
     pd.concat(false_feats).to_file(ev.EVAL_DIR / "false_footprints.gpkg", driver="GPKG",
                                    layer="false_footprints")
 
-    pd.set_option("display.width", 200)
-    print("\nWhole AOI:")
-    print(df[df.quadrant == "all"].drop(columns="quadrant").round(3).to_string(index=False))
-    print("\nIsolated false area (% of predicted area) by quadrant:")
-    print(df[df.quadrant != "all"].pivot(index="quadrant", columns="dataset",
-                                         values="isolated_pct").round(1).to_string())
-    print("\nWhole false features by quadrant:")
-    print(df[df.quadrant != "all"].pivot(index="quadrant", columns="dataset",
-                                         values="false_features").to_string())
+    pd.set_option("display.width", 220)
+    print("\nGround truth building area (m2):")
+    print(gt.set_index("quadrant").round(0).astype("int64").to_string())
+    print("\nWhole AOI (m2):")
+    cols = ["dataset", "pred_m2", "outside_m2", "edge_m2", "isolated_m2", "isolated_pct",
+            "false_features", "false_features_m2"]
+    print(df[df.quadrant == "all"][cols].round(1).to_string(index=False))
+    for col, title in (("isolated_m2", "Isolated false area (m2)"),
+                       ("false_features_m2", "Area of whole false features (m2)"),
+                       ("false_features", "Whole false features (count)")):
+        t = df.pivot(index="quadrant", columns="dataset", values=col)
+        t.insert(0, "OS all m2", gt.set_index("quadrant")["os_all_m2"].round(0).astype("int64"))
+        print(f"\n{title} by quadrant:")
+        print(t.to_string())
 
 
 if __name__ == "__main__":
