@@ -62,6 +62,23 @@ Known weaknesses: neighbouring buildings merge into single shapes (low object
 F1), detached houses surrounded by trees are missed, and so are buildings under
 20 m².
 
+### False detections
+
+This compares each dataset's footprint area outside *all* OS buildings,
+including the ignored ones. That area splits into edge effects (within 2 m of
+an OS building) and isolated detections (more than 2 m from any OS building):
+
+| Dataset | Outside OS buildings | Isolated | Isolated, rural quadrants | Whole false shapes |
+|---|---|---|---|---|
+| **LiDAR** | 17.6% | 5.6% | 11.5–13.6% | 1,595 (10.3%) |
+| Microsoft | 21.9% | 4.9% | 4.8–6.6% | 801 (3.1%) |
+| OSM | 16.7% | 2.9% | 2.4–5.8% | 408 (1.0%) |
+| OS Open | 10.0% | 1.3% | 1.5–1.6% | 19 (0.1%) |
+
+Most area outside OS outlines is edge misalignment for every dataset. In urban
+areas LiDAR's isolated false area matches Microsoft's. In rural areas it is 2–3
+times higher, mostly small tree crowns and hedgerow fragments.
+
 ## Repository layout
 
 ```
@@ -73,6 +90,7 @@ scripts/
   03_extract_footprints.py  LiDAR footprint extraction
   04_evaluate.py          area / object / per-building evaluation of all datasets
   05_diagnose_objects.py  per-footprint features and false-detection analysis
+  06_false_positives.py   footprint area outside OS buildings, edge vs isolated
   tune_extraction.py      parallel parameter grid search
 environment.yml           conda environment (conda-forge)
 ```
