@@ -25,6 +25,9 @@ DTM_PATH = PROCESSED / "dtm.tif"
 NDSM_PATH = PROCESSED / "ndsm.tif"
 
 GROUND_TRUTH_PATH = DATA / "ground_truth_data" / "gtd_buildings.parquet"
+
+# OS Open Roads RoadLink (SX square), used to align footprint orientation
+ROADS_PATH = DATA / "roads" / "SX_RoadLink.shp"
 GROUND_TRUTH_GPKG = DATA / "ground_truth_data" / "bld_fts_building.gpkg"
 
 BENCHMARKS = {
@@ -35,5 +38,12 @@ BENCHMARKS = {
 
 # Ground truth buildings left out of scoring. They become "ignore" zones, so a
 # dataset is neither rewarded nor penalised for footprints there.
-GT_EXCLUDE_TYPES = ["Domestic Outbuilding", "Unknown Building", "Electricity Sub Station"]
+# Excluded building types, each with the footprint area (m2) below which it is
+# excluded; inf = always. Large "Unknown Building" features are mostly real
+# buildings that OS has not classified, so only small ones are excluded.
+GT_EXCLUDE_TYPES = {
+    "Domestic Outbuilding": float("inf"),
+    "Unknown Building": 50.0,
+    "Electricity Sub Station": float("inf"),
+}
 GT_MIN_HEIGHT = 3.5  # m, OS height_relativemax_m; buildings with no height are ignored too

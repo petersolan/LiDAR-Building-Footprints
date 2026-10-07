@@ -31,6 +31,7 @@ from groundtruth import load_ground_truth
 
 EVAL_DIR = config.OUTPUTS / "eval"
 DATASETS = {"lidar_baseline": config.OUTPUTS / "footprints" / "lidar_baseline.gpkg",
+            "lidar_regularised": config.OUTPUTS / "footprints" / "lidar_regularised.gpkg",
             **config.BENCHMARKS}
 
 minx, miny, maxx, maxy = config.ANALYSIS_BOUNDS

@@ -25,6 +25,13 @@ The method uses those properties:
    matching the ground truth filter below. Footprints under 400 m² that are
    green on average (Sentinel-2 NDVI > 0.7) are dropped as vegetation.
 5. **Vectorise** and simplify the footprints.
+6. **Square up** (`08_regularise_footprints.py`): outlines are traced between
+   pixel centres, simplified, and each footprint's edges are snapped to its
+   dominant orientation and the perpendicular, so corners become right angles.
+   If squaring would change a shape by more than 15% (IoU < 0.85), the
+   simplified outline is kept instead. Where squared neighbours would overlap,
+   the overlap goes to the footprint whose traced outline covered more of it,
+   so neighbours can share edges but never overlap.
 
 The NDVI comes from a median of clear summer 2022 Sentinel-2 L2A scenes, the
 same year as the LiDAR. At 10 m it is too coarse to judge individual roofs, but
@@ -38,10 +45,12 @@ out to check the settings generalise.
 
 ## Evaluation
 
-Ground truth is the OS National Geographic Database building layer. Outbuildings,
-"Unknown Building" and electricity substations are left out, along with buildings
-under 3.5 m or without a recorded height. These become **ignore zones**: no
-dataset is rewarded or penalised for footprints there.
+Ground truth is the OS National Geographic Database building layer. Domestic
+outbuildings, electricity substations and "Unknown Building" features under
+50 m² are left out, along with buildings under 3.5 m or without a recorded
+height. (Larger "Unknown Building" features are mostly real buildings that OS has
+not classified, such as farm buildings, so they are scored.) These become
+**ignore zones**: no dataset is rewarded or penalised for footprints there.
 
 Each dataset is scored at three levels:
 
@@ -54,21 +63,24 @@ Each dataset is scored at three levels:
 
 ## Results so far
 
+Scored ground truth: 47,200 buildings in the 100 km² AOI.
+
 | Dataset | Area precision | Area recall | **Area F1** | IoU | Object F1 | Buildings detected |
 |---|---|---|---|---|---|---|
-| **LiDAR + Sentinel-2 (this project)** | 0.800 | 0.838 | **0.819** | 0.693 | 0.440 | 85.7% |
-| OpenStreetMap | 0.819 | 0.800 | 0.809 | 0.680 | 0.663 | 90.9% |
-| Microsoft | 0.758 | 0.800 | 0.779 | 0.638 | 0.659 | 92.3% |
-| OS Open | 0.887 | 0.924 | 0.905 | 0.827 | 0.756 | 98.1% |
+| **LiDAR + Sentinel-2, squared** | 0.804 | 0.832 | **0.818** | 0.691 | 0.446 | 85.5% |
+| LiDAR + Sentinel-2, pixel-traced | 0.806 | 0.836 | 0.821 | 0.696 | 0.447 | 85.5% |
+| OpenStreetMap | 0.823 | 0.794 | 0.808 | 0.678 | 0.664 | 90.5% |
+| Microsoft | 0.765 | 0.799 | 0.781 | 0.641 | 0.662 | 92.1% |
+| OS Open | 0.891 | 0.926 | 0.908 | 0.832 | 0.761 | 98.1% |
 
 Area F1 by quadrant:
 
-| Quadrant | LiDAR + S2 | Microsoft | OSM | OS Open |
+| Quadrant | LiDAR squared | Microsoft | OSM | OS Open |
 |---|---|---|---|---|
-| SW (urban, calibration) | 0.833 | 0.796 | 0.813 | 0.904 |
-| NE (rural, calibration) | 0.753 | 0.716 | 0.773 | 0.879 |
-| SE (urban, hold-out) | 0.800 | 0.755 | 0.827 | 0.916 |
-| NW (rural, hold-out) | 0.762 | 0.723 | 0.574 | 0.861 |
+| SX99SW (urban, calibration) | 0.829 | 0.796 | 0.814 | 0.905 |
+| SX99NE (rural, calibration) | 0.784 | 0.747 | 0.771 | 0.901 |
+| SX99SE (urban, hold-out) | 0.799 | 0.756 | 0.825 | 0.918 |
+| SX99NW (rural, hold-out) | 0.797 | 0.762 | 0.597 | 0.890 |
 
 On area, the footprints score highest of the free datasets and beat Microsoft in
 every quadrant, held-out ones included. OS Open probably derives from the same
@@ -77,6 +89,25 @@ OS master data as the ground truth, so its lead is expected.
 Known weaknesses: neighbouring buildings merge into single shapes (low object
 F1), detached houses surrounded by trees are missed (74% detected against about
 90% for Microsoft and OSM), and so are buildings under 20 m².
+
+### Footprint shape
+
+Squaring was assessed on four 500 m sample tiles (dense urban, mid-density,
+suburban, rural), against all OS buildings:
+
+| Dataset | Corners per footprint (median) | Right-angle corners | Orientation error vs OS | Edges within 1 m of OS outline |
+|---|---|---|---|---|
+| LiDAR pixel-traced | 45 | 76% (pixel steps) | 21.9° | 58.6% |
+| **LiDAR squared** | **12** | **83%** | **3.4°** | 58.1% |
+| Microsoft | 5 | 84% | 2.7° | 43.4% |
+| OpenStreetMap | 5 | 83% | 0.8° | 58.6% |
+| OS Open | 5 | 83% | 0.3° | 79.7% |
+
+Squaring costs 0.003 of area F1 and leaves edge accuracy unchanged. Aligning
+footprints to nearby OS Open Roads centrelines was also tested: it set the
+orientation of about 57% of footprints but did not reduce the orientation error
+(3.38° vs 3.41°), so it is off by default (`use_roads` in
+`08_regularise_footprints.py`).
 
 ### False detections
 
@@ -87,19 +118,19 @@ Whole false shapes are features with under 10% of their area on OS buildings.
 
 | Dataset | Predicted (m²) | Outside OS (m²) | Edge (m²) | Isolated (m²) | Whole false shapes |
 |---|---|---|---|---|---|
-| **LiDAR + S2** | 5,704,028 | 1,045,213 | 765,518 | 279,695 | 827 (180,576 m²) |
+| **LiDAR squared** | 5,691,356 | 1,054,335 | 775,728 | 278,607 | 827 (179,405 m²) |
 | Microsoft | 5,832,843 | 1,275,323 | 988,319 | 287,004 | 801 (89,573 m²) |
 | OSM | 5,302,737 | 883,818 | 731,440 | 152,379 | 408 (37,523 m²) |
 | OS Open | 5,849,765 | 587,784 | 512,283 | 75,501 | 19 (4,835 m²) |
 
 Isolated false area by quadrant, next to the OS building area there:
 
-| Quadrant | OS buildings (m²) | LiDAR + S2 | Microsoft | OSM | OS Open |
+| Quadrant | OS buildings (m²) | LiDAR squared | Microsoft | OSM | OS Open |
 |---|---|---|---|---|---|
-| SW | 3,692,057 | 157,088 | 167,239 | 86,171 | 41,312 |
-| SE | 1,676,458 | 82,717 | 86,611 | 50,992 | 25,022 |
-| NE | 321,791 | 19,841 | 14,767 | 6,296 | 4,659 |
-| NW | 274,237 | 20,049 | 18,388 | 8,920 | 4,508 |
+| SX99SW | 3,692,057 | 156,859 | 167,239 | 86,171 | 41,312 |
+| SX99SE | 1,676,458 | 82,340 | 86,611 | 50,992 | 25,022 |
+| SX99NE | 321,791 | 19,604 | 14,767 | 6,296 | 4,659 |
+| SX99NW | 274,237 | 19,805 | 18,388 | 8,920 | 4,508 |
 
 Most area outside OS outlines is edge misalignment for every dataset. LiDAR's
 isolated false area is on a par with Microsoft's, but its whole false shapes
@@ -120,6 +151,7 @@ scripts/
   05_diagnose_objects.py    per-footprint features and false-detection analysis
   06_false_positives.py     footprint area outside OS buildings, edge vs isolated
   07_sentinel2_ndvi.py      summer 2022 Sentinel-2 NDVI composite
+  08_regularise_footprints.py  square up footprints, no overlaps (--sample / --full)
   tune_extraction.py        parallel parameter grid search
 environment.yml             conda environment (conda-forge)
 ```
@@ -134,6 +166,7 @@ python 01_profile_vectors.py
 python 02_prepare_rasters.py
 python 07_sentinel2_ndvi.py      # downloads Sentinel-2 over the AOI; optional
 python 03_extract_footprints.py  # skips the NDVI filter if 07 hasn't run
+python 08_regularise_footprints.py --full
 python 04_evaluate.py
 python 06_false_positives.py
 ```
@@ -157,6 +190,7 @@ The input data is not included in this repository. Expected layout under `data/`
 | `footprints/microsoft_buildings.parquet` | [Microsoft Global ML Building Footprints](https://github.com/microsoft/GlobalMLBuildingFootprints) | ODbL |
 | `footprints/osm_buildings.parquet` | OpenStreetMap | ODbL |
 | `footprints/os_buildings.parquet` | OS Open building data | OGL v3 |
+| `roads/SX_RoadLink.shp` | OS Open Roads, road links (optional, only for `use_roads`) | OGL v3 |
 
 Sentinel-2 L2A is downloaded by `07_sentinel2_ndvi.py` from
 [Earth Search](https://earth-search.aws.element84.com/v1) (Copernicus data,
