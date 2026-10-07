@@ -43,6 +43,7 @@ PARAMS = dict(
     max_object_roughness=99.0,  # mean roughness within a footprint
     max_object_ndvi=0.7,       # mean Sentinel-2 NDVI within a footprint (1.0 = off)
     ndvi_max_area_m2=400.0,    # NDVI filter only applies to footprints smaller than this
+    ndvi_roof_core_m2=0.0,     # footprints with a smooth roof patch this big skip the NDVI filter (0 = off)
     simplify_m=0.5,     # Douglas-Peucker tolerance for the polygons
 )
 
@@ -87,6 +88,18 @@ def extract_mask(ndsm, dsm, p=PARAMS, rough=None, ndvi=None):
     return filter_objects(mask, ndsm, rough, p, ndvi)
 
 
+def largest_smooth_patch(mask, labels, n, rough, p=PARAMS):
+    """Area (m2) of the largest connected smooth patch inside each footprint."""
+    patches, m = ndi.label(mask & (rough < p["max_roughness"]))
+    best = np.zeros(n + 1)
+    if m:
+        size = np.bincount(patches.ravel(), minlength=m + 1)[1:]
+        # Each smooth patch lies inside exactly one footprint
+        owner = ndi.maximum(labels, patches, np.arange(1, m + 1)).astype(int)
+        np.maximum.at(best, owner, size)
+    return best[1:] * config.RESOLUTION ** 2
+
+
 def filter_objects(mask, ndsm, rough, p=PARAMS, ndvi=None):
     """Drop connected footprints that are too low, mostly rough or green (vegetation)."""
     labels, n = ndi.label(mask)
@@ -104,6 +117,9 @@ def filter_objects(mask, ndsm, rough, p=PARAMS, ndvi=None):
         # (houses joined to trees) are exempt; small green blobs are trees
         area = np.bincount(labels.ravel(), minlength=n + 1)[1:] * config.RESOLUTION ** 2
         green = ndi.mean(ndvi, labels, idx) > p["max_object_ndvi"]
+        if p["ndvi_roof_core_m2"] > 0:
+            # A solid planar patch is a roof, even if the trees around it are green
+            green &= largest_smooth_patch(mask, labels, n, rough, p) < p["ndvi_roof_core_m2"]
         keep &= ~(green & (area < p["ndvi_max_area_m2"]))
     return np.concatenate([[False], keep])[labels]
 

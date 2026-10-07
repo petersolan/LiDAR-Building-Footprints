@@ -29,6 +29,7 @@ footprints for comparison), or --full for the whole AOI.
 """
 
 import argparse
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
@@ -408,20 +409,25 @@ def run_samples(p):
     print(f"\nWrote {OUT_SAMPLE}")
 
 
-def run_full(p):
+def run_full(p, mask_path=MASK_PATH, out_path=OUT_FULL):
     roads = load_roads(config.ANALYSIS_BOUNDS) if p["use_roads"] else None
-    with rasterio.open(MASK_PATH) as src:
+    with rasterio.open(mask_path) as src:
         mask = src.read(1).astype(bool)
         gdf, _ = process(mask, src.transform, src.crs, p, roads)
-    gdf.to_file(OUT_FULL, layer="lidar_regularised")
-    print(f"{len(gdf):,} footprints -> {OUT_FULL}")
+    gdf.to_file(out_path, layer=out_path.stem)
+    print(f"{len(gdf):,} footprints -> {out_path}")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--full", action="store_true", help="process the whole AOI")
+    parser.add_argument("--mask", type=Path, default=MASK_PATH, help="building mask (--full)")
+    parser.add_argument("--out", type=Path, default=OUT_FULL, help="output GeoPackage (--full)")
     args = parser.parse_args()
-    (run_full if args.full else run_samples)(PARAMS)
+    if args.full:
+        run_full(PARAMS, args.mask, args.out)
+    else:
+        run_samples(PARAMS)
 
 
 if __name__ == "__main__":
