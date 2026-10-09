@@ -26,8 +26,10 @@ NDSM_PATH = PROCESSED / "ndsm.tif"
 
 GROUND_TRUTH_PATH = DATA / "ground_truth_data" / "gtd_buildings.parquet"
 
-# OS Open Roads RoadLink (SX square), used to align footprint orientation
+# OS Open Roads RoadLink (SX square): footprint orientation (optional) and the bridge rule
 ROADS_PATH = DATA / "roads" / "SX_RoadLink.shp"
+# Railways from OS Open Zoomstack (prepare_rail.py), for the bridge rule
+RAIL_PATH = DATA / "roads" / "zoomstack_rail.gpkg"
 GROUND_TRUTH_GPKG = DATA / "ground_truth_data" / "bld_fts_building.gpkg"
 
 BENCHMARKS = {
@@ -47,3 +49,7 @@ GT_EXCLUDE_TYPES = {
     "Electricity Sub Station": float("inf"),
 }
 GT_MIN_HEIGHT = 3.5  # m, OS height_relativemax_m; buildings with no height are ignored too
+# Smallest footprint that counts as a building, for every dataset: smaller ground
+# truth buildings become ignore zones and smaller predicted footprints are left
+# out. 30 m2 drops kiosks and fragments; 40 m2 also lost ~4,100 real garages.
+MIN_BUILDING_M2 = 30.0

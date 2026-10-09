@@ -29,7 +29,7 @@ import config
 from groundtruth import load_ground_truth
 
 OUT_DIR = config.OUTPUTS / "diagnostics"
-LIDAR_PATH = config.OUTPUTS / "footprints" / "lidar_baseline.gpkg"
+LIDAR_PATH = config.OUTPUTS / "footprints" / "lidar_classified.gpkg"
 NDVI_PATH = config.PROCESSED / "ndvi_s2_2022.tif"  # optional, from 07_sentinel2_ndvi.py
 SMOOTH_THRESHOLD = 1.25  # roughness below this counts as smooth (matches extraction)
 

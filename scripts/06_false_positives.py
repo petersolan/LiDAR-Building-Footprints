@@ -8,7 +8,11 @@ is split into:
 
 Also counts whole false footprints: features with < 10% of their area on OS
 buildings. Results by dataset and quadrant go to outputs/eval/false_positives.csv
-and the false footprints to outputs/eval/false_footprints.gpkg.
+and the false footprints to outputs/eval/false_footprints.gpkg, one layer per
+dataset (the LiDAR method's layer is `lidar`).
+
+Footprints are clipped to the AOI; pieces under 30 m2 left by the clipping are
+dropped, as in 04_evaluate.py.
 """
 
 import importlib
@@ -46,6 +50,7 @@ def main():
     for name, path in ev.DATASETS.items():
         pr = ev.load(path, aoi)
         geoms = ev.polygons(shapely.intersection(pr.geometry.values, aoi))
+        geoms = geoms[shapely.area(geoms) >= config.MIN_BUILDING_M2]  # no slivers at the AOI edge
         pr_u = shapely.union_all(geoms)
 
         outside = shapely.difference(pr_u, os_u)
@@ -79,8 +84,10 @@ def main():
     df[m2] = df[m2].round(0).astype("int64")
     ev.EVAL_DIR.mkdir(parents=True, exist_ok=True)
     df.round(2).to_csv(ev.EVAL_DIR / "false_positives.csv", index=False)
-    pd.concat(false_feats).to_file(ev.EVAL_DIR / "false_footprints.gpkg", driver="GPKG",
-                                   layer="false_footprints")
+    out = ev.EVAL_DIR / "false_footprints.gpkg"
+    out.unlink(missing_ok=True)  # replaced whole, so layers of datasets no longer evaluated go too
+    for name, feats in zip(ev.DATASETS, false_feats, strict=True):
+        feats.to_file(out, driver="GPKG", layer=name)
 
     pd.set_option("display.width", 220)
     print("\nGround truth building area (m2):")

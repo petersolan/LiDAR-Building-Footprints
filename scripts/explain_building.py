@@ -146,7 +146,7 @@ def main():
     missing = set(args.fids) - set(rows["fid"])
     if missing:
         print(f"Not found in {config.GROUND_TRUTH_PATH.name}: {sorted(missing)}")
-    regularised = gpd.read_file(config.OUTPUTS / "footprints" / "lidar_regularised.gpkg",
+    regularised = gpd.read_file(config.OUTPUTS / "footprints" / "lidar_classified.gpkg",
                                 bbox=tuple(rows.total_bounds))
     for row in rows.itertuples():
         explain(row, ext.PARAMS, regularised)

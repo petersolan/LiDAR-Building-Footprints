@@ -23,9 +23,11 @@
                footprint whose traced outline covers more of it; the other is
                cut back. Neighbours may share edges but never overlap.
 
-Uses only the LiDAR mask (no OS geometry). Run with --sample to process four
-500 m test tiles (written with the matching OS, Microsoft, OSM and OS Open
-footprints for comparison), or --full for the whole AOI.
+Uses only the LiDAR mask (no OS geometry): by default the classifier's mask
+from 09_object_classifier.py, written to outputs/footprints/lidar_classified.gpkg.
+Run with --full for the whole AOI, or --sample to process four 500 m test tiles
+and compare outline shape with the OS ground truth and the benchmarks (written
+to outputs/footprints/regularise_samples.gpkg with the matching footprints).
 """
 
 import argparse
@@ -44,8 +46,8 @@ from skimage import measure
 import config
 from groundtruth import load_ground_truth
 
-MASK_PATH = config.OUTPUTS / "footprints" / "lidar_baseline_mask.tif"
-OUT_FULL = config.OUTPUTS / "footprints" / "lidar_regularised.gpkg"
+MASK_PATH = config.OUTPUTS / "footprints" / "lidar_classified_mask.tif"
+OUT_FULL = config.OUTPUTS / "footprints" / "lidar_classified.gpkg"
 OUT_SAMPLE = config.OUTPUTS / "footprints" / "regularise_samples.gpkg"
 
 PARAMS = dict(
@@ -344,9 +346,9 @@ def run_samples(p):
     os_all = pd.concat([scored, ignored])
     windows = sample_windows(scored)
 
-    layers = {"lidar_regularised": [], "lidar_regularised_noroads": [], "lidar_traced": [],
-              "lidar_previous": [], "roads": []}
-    previous = gpd.read_file(config.OUTPUTS / "footprints" / "lidar_baseline.gpkg")
+    # lidar_squared: final outlines; lidar_squared_roads: with road alignment (use_roads);
+    # lidar_traced: the traced and simplified outlines before squaring
+    layers = {"lidar_squared": [], "lidar_squared_roads": [], "lidar_traced": [], "roads": []}
     with rasterio.open(MASK_PATH) as src:
         for name, win in windows.items():
             w = from_bounds(*win.bounds, transform=src.transform)
@@ -355,16 +357,14 @@ def run_samples(p):
             mask = src.read(1, window=wp).astype(bool)
             pad_bounds = win.buffer(30 + p["road_max_dist_m"], join_style="mitre").bounds
             roads = load_roads(pad_bounds)
-            reg, traced = process(mask, src.window_transform(wp), src.crs, p, roads)
-            reg_nr, _ = process(mask, src.window_transform(wp), src.crs, dict(p, use_roads=False))
+            sq, traced = process(mask, src.window_transform(wp), src.crs, dict(p, use_roads=False))
+            sq_roads, _ = process(mask, src.window_transform(wp), src.crs, dict(p, use_roads=True), roads)
             road_lines = gpd.GeoDataFrame(geometry=roads[0].geometries, crs=config.CRS)
-            for key, g in (("lidar_regularised", reg), ("lidar_regularised_noroads", reg_nr),
+            for key, g in (("lidar_squared", sq), ("lidar_squared_roads", sq_roads),
                            ("lidar_traced", traced), ("roads", road_lines)):
                 g = g[g.intersects(win)].copy(); g["tile"] = name
                 layers[key].append(g)
-            prev = previous[previous.intersects(win)].copy(); prev["tile"] = name
-            layers["lidar_previous"].append(prev)
-            r = layers["lidar_regularised"][-1]
+            r = layers["lidar_squared_roads"][-1]
             print(f"{name}: {len(r)} footprints, orientation from road "
                   f"{100 * (r['orientation'] == 'road').mean():.0f}%, own "
                   f"{100 * (r['orientation'] == 'own').mean():.0f}%, "
@@ -392,7 +392,7 @@ def run_samples(p):
     rows = []
     for tile, win in windows.items():
         for name, frame in datasets.items():
-            if name in ("lidar_traced", "roads"):
+            if name == "roads":
                 continue
             sub = frame[frame.intersects(win)]
             rows.append(dict(tile=tile, dataset=name, **shape_metrics(sub, os_tree, os_u, win),
@@ -406,7 +406,10 @@ def run_samples(p):
     print(summary.round(2).to_string())
     print("\nPer tile:")
     print(df.round(2).to_string(index=False))
-    print(f"\nWrote {OUT_SAMPLE}")
+    eval_dir = config.OUTPUTS / "eval"
+    eval_dir.mkdir(parents=True, exist_ok=True)
+    summary.round(3).to_csv(eval_dir / "shape_samples.csv")
+    print(f"\nWrote {OUT_SAMPLE} and {eval_dir / 'shape_samples.csv'}")
 
 
 def run_full(p, mask_path=MASK_PATH, out_path=OUT_FULL):
