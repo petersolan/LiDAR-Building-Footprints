@@ -10,3 +10,6 @@ __pycache__/
 # GIS side files
 *.aux.xml
 *.qgz~
+
+# Personal QGIS session (contains user details); the shared one is built by build_check_project.py
+enhanced_chp.qgz

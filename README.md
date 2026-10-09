@@ -475,3 +475,24 @@ The EA's **Vegetation Object Model** is deliberately *not* used as an input. Its
 vegetation classification relies on proximity to OS MasterMap features, which
 would leak the ground truth into the method. OS Open Zoomstack is used only for
 railway lines, not its building or woodland layers, for the same reason.
+
+### Attribution
+
+The README images and any outputs derived from this project contain:
+
+- Environment Agency information © Environment Agency and/or database right,
+  licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
+  (LiDAR DSM and DTM).
+- OS data © Crown copyright and database right 2026 (OS Open Roads, OS Open
+  Zoomstack railways, OS Open buildings), under the Open Government Licence v3.0.
+- Modified Copernicus Sentinel data 2022.
+- Microsoft Global ML Building Footprints and OpenStreetMap data
+  (© OpenStreetMap contributors), under the Open Database License (ODbL),
+  used for comparison only.
+
+The OS National Geographic Database ground truth is used for scoring only; it
+is not redistributed, and no image in this repository shows it.
+
+## Licence
+
+Code: [MIT](LICENSE). Data: see [Attribution](#attribution).
