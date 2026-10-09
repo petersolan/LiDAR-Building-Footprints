@@ -17,6 +17,13 @@ one footprint, so object-level scores trail the other datasets. Unlike the
 free datasets, every footprint also has a height: the maximum is within 2 m of
 OS's for 88% of buildings (median error 0.65 m).
 
+![LiDAR building footprints over the DSM hillshade, central Exeter](docs/images/footprints.png)
+
+*Central Exeter: the footprints (blue) over a hillshade of the LiDAR surface
+model. Trees show as rough texture in the hillshade and are left out; the
+river Exe is on the left. Only open data is drawn here: the OS ground truth
+used for scoring can't be redistributed.*
+
 ## Contents
 
 - [Method](#method)
@@ -315,6 +322,12 @@ to 5.0°), so it stays off by default.
 
 ### Building heights
 
+![Footprints shaded by maximum height above ground, central Exeter](docs/images/heights.png)
+
+*The same area, footprints shaded by maximum height: pale under 5 m, through
+orange (5–12 m) to dark red for 20 m and over. The tall blocks of the city
+centre stand out from the two- and three-storey terraces around them.*
+
 Each footprint's height is checked against OS's `height_relativemax_m` where
 the footprint matches a single OS building one to one (IoU ≥ 0.5): 4,012
 footprints. Merged footprints covering several buildings are left out, so the
@@ -400,6 +413,7 @@ scripts/
   prepare_rail.py           railway lines from OS Open Zoomstack (bridge rule)
   explain_building.py       which extraction step loses given OS buildings
   build_check_project.py    QGIS project for checking the results (run with QGIS's Python)
+  render_readme_images.py   the README images (QGIS's Python; open data only)
   tune_extraction.py        parallel grid search of the extraction parameters
 environment.yml             conda environment (conda-forge)
 ```
