@@ -9,7 +9,7 @@ Layers, top to bottom (paths are relative, so the project moves with the repo):
                boxes (each scored by a model trained without it)
   Inspect      (off) OS buildings shaded by LiDAR coverage, LiDAR footprints by
                their label against OS with the per-footprint statistics from
-               05_diagnose_objects.py
+               05_diagnose_objects.py, and by height (10_building_heights.py)
   Benchmarks   (off) Microsoft, OSM and OS Open footprints and their false shapes
   Rasters      (off) nDSM height, Sentinel-2 NDVI, DSM hillshade
   Imagery      Google and Bing satellite tiles, for viewing only
@@ -123,6 +123,18 @@ def label_layer():
     return lyr
 
 
+def height_layer():
+    """LiDAR footprints shaded by maximum height above ground (10_building_heights.py)."""
+    lyr = vector(ROOT / "outputs" / "footprints" / "lidar_classified.gpkg", "LiDAR footprints by height (max)")
+    if lyr is None or lyr.fields().indexOf("height_max_m") < 0:
+        return None
+    ranges = [(0, 5, "#ffffb2", "under 5 m"), (5, 8, "#fecc5c", "5-8 m"), (8, 12, "#fd8d3c", "8-12 m"),
+              (12, 20, "#f03b20", "12-20 m"), (20, 200, "#bd0026", "20 m and over")]
+    lyr.setRenderer(QgsGraduatedSymbolRenderer("height_max_m", [
+        QgsRendererRange(lo, hi, fill(col, "#333333", 0.1, 220), label) for lo, hi, col, label in ranges]))
+    return lyr
+
+
 def raster(path, name):
     lyr = QgsRasterLayer(str(path), name)
     return lyr if lyr.isValid() else None
@@ -170,6 +182,7 @@ def main() -> int:
     inspect.setItemVisibilityChecked(False)
     add(inspect, coverage_layer(), False)
     add(inspect, label_layer(), False)
+    add(inspect, height_layer(), False)
 
     bench = root.addGroup("Benchmarks")
     bench.setItemVisibilityChecked(False)

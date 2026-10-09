@@ -1,7 +1,8 @@
-# Building footprints from LiDAR: Exeter case study
+# Building footprints and heights from LiDAR: Exeter case study
 
 Can open LiDAR elevation data produce building footprints that compete with the
-freely available footprint datasets? This project extracts footprints for a
+freely available footprint datasets? This project extracts footprints, each
+with its roof height, for a
 100 km² test area over Exeter, UK (OS grid square **SX99**) from the Environment
 Agency's 1 m DSM and DTM, with Sentinel-2 imagery as a vegetation signal, and
 scores them against Ordnance Survey's detailed building data alongside three
@@ -12,7 +13,9 @@ free alternatives: **Microsoft Global ML Building Footprints**,
 (F1 0.836, against 0.808 for OSM and 0.782 for Microsoft), in every quadrant,
 each scored by a model that never saw it, and 94% of them sit on a real
 building. Their weak point is shape: neighbouring buildings often merge into
-one footprint, so object-level scores trail the other datasets.
+one footprint, so object-level scores trail the other datasets. Unlike the
+free datasets, every footprint also has a height: the maximum is within 2 m of
+OS's for 88% of buildings (median error 0.65 m).
 
 ## Contents
 
@@ -21,7 +24,8 @@ one footprint, so object-level scores trail the other datasets.
 - [Results](#results): [headline](#headline), [by quadrant](#by-quadrant),
   [by building type and size](#by-building-type-and-size),
   [classifier](#classifier), [false detections](#false-detections),
-  [footprint shape](#footprint-shape), [limitations](#limitations)
+  [footprint shape](#footprint-shape), [building heights](#building-heights),
+  [limitations](#limitations)
 - [Outputs](#outputs) · [Repository layout](#repository-layout) ·
   [Running it](#running-it) · [Data](#data)
 
@@ -67,6 +71,9 @@ on those properties:
    simplified outline is kept instead. Where squared neighbours would overlap,
    the overlap goes to the footprint whose traced outline covered more of it,
    so neighbours can share edges but never overlap.
+8. **Heights** (`10_building_heights.py`): the nDSM pixels inside each final
+   footprint give its median, 95th percentile and maximum height above
+   ground. With the footprint, that is a simple block (LoD1) building model.
 
 The NDVI is a median of clear summer 2022 Sentinel-2 L2A scenes, the same year
 as the LiDAR (`07_sentinel2_ndvi.py`). At 10 m it is too coarse to judge
@@ -306,6 +313,35 @@ the mean orientation error from 3.3° to 3.0°, but not consistently: it helps
 the mid-density tile (3.1° to 1.2°) and makes the dense urban tile worse (4.1°
 to 5.0°), so it stays off by default.
 
+### Building heights
+
+Each footprint's height is checked against OS's `height_relativemax_m` where
+the footprint matches a single OS building one to one (IoU ≥ 0.5): 4,012
+footprints. Merged footprints covering several buildings are left out, so the
+check leans towards detached houses (2,052 of the pairs). From
+`heights.csv`; error = LiDAR minus OS.
+
+| LiDAR height | Bias | Median absolute error | Mean absolute error | RMSE | Within 1 m | Within 2 m |
+|---|---|---|---|---|---|---|
+| Maximum (`height_max_m`) | +0.46 m | 0.65 m | 1.09 m | 1.93 m | 68% | 88% |
+| 95th percentile (`height_p95_m`) | −0.48 m | 0.59 m | 0.91 m | 1.49 m | 71% | 90% |
+
+| Building class | Pairs | Maximum: within 2 m | RMSE | 95th percentile: within 2 m | RMSE |
+|---|---|---|---|---|---|
+| Detached house | 2,052 | 93% | 1.24 m | 94% | 1.06 m |
+| Terraced / semi-detached house | 291 | 88% | 1.40 m | 95% | 0.98 m |
+| Flats / other residential | 459 | 88% | 1.86 m | 88% | 1.52 m |
+| Commercial / mixed use | 543 | 85% | 1.94 m | 85% | 1.59 m |
+| Outbuilding / unknown | 408 | 81% | 2.66 m | 88% | 1.62 m |
+| Public / other | 252 | 62% | 4.28 m | 67% | 3.33 m |
+
+The two measures bracket OS's height: the maximum reads 0.46 m high on
+average (a chimney, aerial or overhanging branch counts) and the 95th
+percentile 0.48 m low (it sits just below the ridge). Their correlation with
+OS is 0.835. Houses are the most accurate; public buildings (churches,
+schools, halls) are hardest, probably because towers and spires are thin and
+a 1 m grid catches only part of them.
+
 ### Limitations
 
 - **Merged neighbours.** Touching roofs at similar heights become one
@@ -326,7 +362,7 @@ All under `outputs/`:
 
 | File | Contents |
 |---|---|
-| `footprints/lidar_classified.gpkg` | **The final footprints** (12,654), squared, with area, corner count and orientation source |
+| `footprints/lidar_classified.gpkg` | **The final footprints** (12,654), squared, with area, corner count, orientation source and heights (median, 95th percentile, maximum) |
 | `footprints/lidar_classified_mask.tif` | The kept building pixels (1 m) before tracing |
 | `diagnostics/candidates.parquet` | Every candidate with its 18 features, label, probability and the bridge rule's measures |
 | `diagnostics/lidar_objects.gpkg` | Final footprints with height, roughness, NDVI and shape statistics and a label against OS (`05_diagnose_objects.py`) |
@@ -340,6 +376,7 @@ All under `outputs/`:
 | `eval/classifier_*.csv`, `eval/classifier_settings.json` | The classifier report (see [Classifier](#classifier)), with each fold's threshold and bridge rule |
 | `models/building_classifier.joblib` | The classifier trained on all four quadrants, with its threshold and bridge rule, for other areas |
 | `eval/shape_samples.csv`, `footprints/regularise_samples.gpkg` | Outline shape statistics and the sample tiles' footprints |
+| `eval/heights.csv`, `eval/heights_pairs.csv` | Height errors against OS overall, per quadrant and class; every matched pair |
 
 ## Repository layout
 
@@ -359,6 +396,7 @@ scripts/
   08_regularise_footprints.py  trace and square up footprints, no overlaps (--full, or
                             no argument for the four sample tiles)
   09_object_classifier.py   building / not-building classifier, bridge rule, classifier report
+  10_building_heights.py    heights per footprint, checked against OS heights
   prepare_rail.py           railway lines from OS Open Zoomstack (bridge rule)
   explain_building.py       which extraction step loses given OS buildings
   build_check_project.py    QGIS project for checking the results (run with QGIS's Python)
@@ -381,6 +419,7 @@ python 08_regularise_footprints.py --full   # mask -> lidar_classified.gpkg
 python 08_regularise_footprints.py   # optional: outline shape on the sample tiles
 python 04_evaluate.py
 python 06_false_positives.py
+python 10_building_heights.py        # heights per footprint, checked against OS
 python 05_diagnose_objects.py        # optional: per-footprint statistics
 # optional, with QGIS's Python: a styled QGIS project of all results
 # "C:\Program Files\QGIS 3.44.13\bin\python-qgis-ltr.bat" build_check_project.py
