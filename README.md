@@ -9,6 +9,8 @@ scores them against Ordnance Survey's detailed building data alongside three
 free alternatives: **Microsoft Global ML Building Footprints**,
 **OpenStreetMap** and **OS Open** buildings.
 
+**[Live 3D demo](https://petersolan.github.io/LiDAR-Building-Footprints/)**: all 12,654 footprints extruded by roof height.
+
 **In short:** on area the LiDAR footprints score highest of the free datasets
 (F1 0.836, against 0.808 for OSM and 0.782 for Microsoft), in every quadrant,
 each scored by a model that never saw it, and 94% of them sit on a real
@@ -410,11 +412,13 @@ scripts/
                             no argument for the four sample tiles)
   09_object_classifier.py   building / not-building classifier, bridge rule, classifier report
   10_building_heights.py    heights per footprint, checked against OS heights
+  11_export_web.py          footprints + heights as WGS84 GeoJSON for the demo site
   prepare_rail.py           railway lines from OS Open Zoomstack (bridge rule)
   explain_building.py       which extraction step loses given OS buildings
   build_check_project.py    QGIS project for checking the results (run with QGIS's Python)
   render_readme_images.py   the README images (QGIS's Python; open data only)
   tune_extraction.py        parallel grid search of the extraction parameters
+site/                       3D web demo (MapLibre), deployed to GitHub Pages
 environment.yml             conda environment (conda-forge)
 ```
 
@@ -434,6 +438,7 @@ python 08_regularise_footprints.py   # optional: outline shape on the sample til
 python 04_evaluate.py
 python 06_false_positives.py
 python 10_building_heights.py        # heights per footprint, checked against OS
+python 11_export_web.py              # site/data/footprints.geojson for the demo
 python 05_diagnose_objects.py        # optional: per-footprint statistics
 # optional, with QGIS's Python: a styled QGIS project of all results
 # "C:\Program Files\QGIS 3.44.13\bin\python-qgis-ltr.bat" build_check_project.py

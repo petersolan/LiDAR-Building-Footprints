@@ -1,6 +1,6 @@
 # Large input/derived data is kept locally, not in git
-data/
-outputs/
+/data/
+/outputs/
 
 # Python
 __pycache__/
